@@ -22,6 +22,6 @@
 //#define 					COLOR_SENSOR_ON
 //#define 					LINE_SENSOR_ON
 //#define 					IMU_SENSOR_ON
-#define					    IR_ARRAY_SENSOR_ON
+//#define					    IR_ARRAY_SENSOR_ON
 
 #endif
