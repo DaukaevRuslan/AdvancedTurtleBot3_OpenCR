@@ -5,19 +5,32 @@
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_broadcaster.h>
 #include <std_msgs/Float64MultiArray.h>
+#include <std_msgs/Float32.h>
 #include <std_msgs/Int32MultiArray.h>
 #include <Wire.h>
 #include "Adafruit_TCS34725.h"
 #include "MPU9250.h"
 
+float checkVoltage() {
+  int adc_value = analogRead(BDPIN_BAT_PWR_ADC);  
+  float vol_value = map(adc_value, 0, 1023, 0, 330*57/10);
+  vol_value = vol_value / 100;
+  return vol_value;
+}
 
 AdvancedTurtleBot3 bot;
 double x = 0;
 double z = 0;
 
+long timerOdom = 0;
+long timerSensors = 0;
+long timerVoltage = 0;
+
 void messageCb(const geometry_msgs::Twist &twist) {
   x = twist.linear.x;
   z = twist.angular.z;
+
+  bot.setGoalVelocity(x, z);
 }
 
 ros::NodeHandle nh;
@@ -26,6 +39,9 @@ ros::Subscriber<geometry_msgs::Twist> subCMD("cmd_vel", messageCb);
 
 geometry_msgs::Vector3 msgTwist;
 ros::Publisher pubVelocity("velocity_data", &msgTwist);
+
+std_msgs::Float32 voltageMsg;
+ros::Publisher pubVoltage("voltage", &voltageMsg);
 
 #ifdef LINE_SENSOR_ON
 std_msgs::Bool msgLine;
@@ -68,6 +84,7 @@ void setup() {
   nh.subscribe(subCMD);
   
   nh.advertise(pubVelocity);
+  nh.advertise(pubVoltage);
 
 #ifdef IR_ARRAY_SENSOR_ON
   nh.advertise(pubIRArray);
@@ -87,33 +104,43 @@ void setup() {
 }
 
 void loop() {
- 
-  bot.setGoalVelocity(x, z);
+
+  if (millis() - timerOdom > 100) {
+    timerOdom = millis();
+    bot.calcRealWheelVel();
+    msgTwist.x = bot.realWheelVelocityDBL[0];
+    msgTwist.y = bot.realWheelVelocityDBL[1];
+    pubVelocity.publish(&msgTwist);  
+  }
+
+  if (millis() - timerSensors > 100) {
+    timerSensors = millis();
+    #ifdef COLOR_SENSOR_ON
+      getDataColor();
+      pubColor.publish(&msgColor);
+    #endif
+    
+    #ifdef IMU_SENSOR_ON
+      getDataIMU();
+      pubIMU.publish(&msgIMU);
+    #endif
+    
+    #ifdef LINE_SENSOR_ON
+      msgLine.data = bot.getLineSensorData();
+      pubLine.publish(&msgLine);
+    #endif
+    
+    #ifdef IR_ARRAY_SENSOR_ON
+      getIRArrayData();
+      pubIRArray.publish(&msgIRArray);
+    #endif
+  }
   
-  bot.calcRealWheelVel();
-  msgTwist.x = bot.realWheelVelocityDBL[0];
-  msgTwist.y = bot.realWheelVelocityDBL[1];
-  pubVelocity.publish(&msgTwist);
-
-#ifdef COLOR_SENSOR_ON
-  getDataColor();
-  pubColor.publish(&msgColor);
-#endif
-
-#ifdef IMU_SENSOR_ON
-  getDataIMU();
-  pubIMU.publish(&msgIMU);
-#endif
-
-#ifdef LINE_SENSOR_ON
-  msgLine.data = bot.getLineSensorData();
-  pubLine.publish(&msgLine);
-#endif
-
-#ifdef IR_ARRAY_SENSOR_ON
-  getIRArrayData();
-  pubIRArray.publish(&msgIRArray);
-#endif
+  if (millis() - timerVoltage > 1000) {
+    timerVoltage = millis();
+    voltageMsg.data = checkVoltage();
+    pubVoltage.publish(&voltageMsg);
+  }
 
   nh.spinOnce();
 }
